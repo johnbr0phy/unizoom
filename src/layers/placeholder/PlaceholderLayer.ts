@@ -1,36 +1,15 @@
 import { getCanvasSize } from '@/rendering/canvas';
 import type { ILayer } from '../types';
 
-// Seeded random for consistent cluster positions per layer
-function seededRandom(initialSeed: number): () => number {
-	let seed = initialSeed;
-	return () => {
-		seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-		return seed / 0x7fffffff;
-	};
-}
-
-// Hash string to number for seeding
-function hashString(str: string): number {
-	let hash = 0;
-	for (let i = 0; i < str.length; i++) {
-		hash = (hash << 5) - hash + str.charCodeAt(i);
-		hash |= 0;
-	}
-	return Math.abs(hash);
-}
-
-interface Cluster {
-	x: number;
-	y: number;
-	size: number;
-	rotation: number;
-	variant: number;
+// Simple hash for consistent random per grid cell
+function cellHash(x: number, y: number, seed: number): number {
+	const h = (x * 374761393 + y * 668265263 + seed) ^ (seed >> 13);
+	return ((h * 1274126177) >>> 0) / 4294967296;
 }
 
 export class PlaceholderLayer implements ILayer {
 	private readonly midLogScale: number;
-	private readonly clusters: Cluster[];
+	private readonly seed: number;
 	private animTime = 0;
 
 	constructor(
@@ -41,24 +20,17 @@ export class PlaceholderLayer implements ILayer {
 		private readonly label: string,
 	) {
 		this.midLogScale = (minLogScale + maxLogScale) / 2;
-		this.clusters = this.generateClusters();
+		// Generate seed from layer id
+		this.seed = this.hashString(id);
 	}
 
-	private generateClusters(): Cluster[] {
-		const rand = seededRandom(hashString(this.id));
-		const clusters: Cluster[] = [];
-		const count = 40 + Math.floor(rand() * 20);
-
-		for (let i = 0; i < count; i++) {
-			clusters.push({
-				x: rand() * 2 - 0.5, // -0.5 to 1.5 (extends beyond screen)
-				y: rand() * 2 - 0.5,
-				size: 0.5 + rand() * 1.5,
-				rotation: rand() * Math.PI * 2,
-				variant: Math.floor(rand() * 4),
-			});
+	private hashString(str: string): number {
+		let hash = 0;
+		for (let i = 0; i < str.length; i++) {
+			hash = (hash << 5) - hash + str.charCodeAt(i);
+			hash |= 0;
 		}
-		return clusters;
+		return Math.abs(hash);
 	}
 
 	update(deltaTime: number): void {
@@ -76,14 +48,20 @@ export class PlaceholderLayer implements ILayer {
 
 		// Scale factor for this layer
 		const scaleFactor = 10 ** (this.midLogScale - logScale);
-		const baseSize = 60;
-		const squareSize = baseSize * scaleFactor;
+		const baseSize = 80;
+		const clusterSize = baseSize * scaleFactor;
+		const spacing = clusterSize * 1.8;
 
-		// Draw grid of squares (subtle background)
-		this.drawGrid(ctx, width, height, centerX, centerY, squareSize);
-
-		// Draw themed clusters
-		this.drawClusters(ctx, width, height, scaleFactor);
+		// Draw grid of themed clusters
+		this.drawClusterGrid(
+			ctx,
+			width,
+			height,
+			centerX,
+			centerY,
+			clusterSize,
+			spacing,
+		);
 
 		// Label
 		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -93,111 +71,110 @@ export class PlaceholderLayer implements ILayer {
 		ctx.fillText(this.label, centerX, height - 40);
 	}
 
-	private drawGrid(
+	private drawClusterGrid(
 		ctx: CanvasRenderingContext2D,
 		width: number,
 		height: number,
 		centerX: number,
 		centerY: number,
-		squareSize: number,
+		clusterSize: number,
+		spacing: number,
 	): void {
-		const spacing = squareSize * 1.5;
-		const maxDim = Math.max(width, height) * 2;
+		const maxDim = Math.max(width, height) * 3;
 
-		if (squareSize > 0.5 && squareSize < maxDim) {
-			ctx.fillStyle = this.color;
-			const offsetX = centerX % spacing;
-			const offsetY = centerY % spacing;
+		// Skip if clusters are too small or too large
+		if (clusterSize < 1 || clusterSize > maxDim) return;
 
-			for (let x = -spacing + offsetX; x < width + spacing; x += spacing) {
-				for (let y = -spacing + offsetY; y < height + spacing; y += spacing) {
-					const dx = (x - centerX) / width;
-					const dy = (y - centerY) / height;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					ctx.globalAlpha = Math.max(0, 0.3 - dist * 0.4);
-					ctx.fillRect(
-						x - squareSize / 2,
-						y - squareSize / 2,
-						squareSize,
-						squareSize,
-					);
+		// Calculate grid offset to keep centered
+		const offsetX = centerX % spacing;
+		const offsetY = centerY % spacing;
+
+		// Calculate grid cell indices for consistent seeding
+		const gridStartX = Math.floor((centerX - width) / spacing);
+		const gridStartY = Math.floor((centerY - height) / spacing);
+
+		let gridX = gridStartX;
+		for (let x = -spacing + offsetX; x < width + spacing; x += spacing) {
+			let gridY = gridStartY;
+			for (let y = -spacing + offsetY; y < height + spacing; y += spacing) {
+				// Distance from center for vignette
+				const dx = (x - centerX) / width;
+				const dy = (y - centerY) / height;
+				const dist = Math.sqrt(dx * dx + dy * dy);
+				const alpha = Math.max(0, 1 - dist * 0.8);
+
+				if (alpha > 0.01) {
+					// Get consistent random values for this grid cell
+					const variant = Math.floor(cellHash(gridX, gridY, this.seed) * 4);
+					const rotation = cellHash(gridX, gridY, this.seed + 1) * Math.PI * 2;
+					const sizeVariation =
+						0.7 + cellHash(gridX, gridY, this.seed + 2) * 0.6;
+
+					ctx.save();
+					ctx.translate(x, y);
+					ctx.rotate(rotation);
+					ctx.globalAlpha = alpha * 0.9;
+
+					const size = clusterSize * sizeVariation;
+					const px = Math.max(1, size / 8);
+
+					// Subtle animation
+					const wobble = Math.sin(this.animTime * 2 + rotation) * 0.05;
+					const pulse =
+						1 + Math.sin(this.animTime * 1.5 + gridX + gridY) * 0.03;
+					ctx.rotate(wobble);
+					ctx.scale(pulse, pulse);
+
+					this.drawThemedCluster(ctx, size, px, variant);
+
+					ctx.restore();
 				}
+				gridY++;
 			}
-			ctx.globalAlpha = 1;
+			gridX++;
 		}
-	}
-
-	private drawClusters(
-		ctx: CanvasRenderingContext2D,
-		width: number,
-		height: number,
-		scaleFactor: number,
-	): void {
-		const baseClusterSize = Math.min(width, height) * 0.08;
-
-		for (const cluster of this.clusters) {
-			const x = cluster.x * width;
-			const y = cluster.y * height;
-			const size = baseClusterSize * cluster.size * scaleFactor;
-
-			// Skip if too small or too large
-			if (size < 2 || size > width * 2) continue;
-
-			// Animate slightly
-			const wobble = Math.sin(this.animTime * 2 + cluster.rotation) * 0.1;
-			const pulse = 1 + Math.sin(this.animTime * 3 + cluster.x * 10) * 0.05;
-
-			ctx.save();
-			ctx.translate(x, y);
-			ctx.rotate(cluster.rotation + wobble);
-			ctx.scale(pulse, pulse);
-
-			this.drawThemedCluster(ctx, size, cluster.variant);
-
-			ctx.restore();
-		}
+		ctx.globalAlpha = 1;
 	}
 
 	private drawThemedCluster(
 		ctx: CanvasRenderingContext2D,
 		size: number,
+		px: number,
 		variant: number,
 	): void {
-		const pixelSize = Math.max(1, size / 8);
-
 		switch (this.id) {
 			case 'quark':
-				this.drawQuark(ctx, size, pixelSize, variant);
+				this.drawQuark(ctx, size, px, variant);
 				break;
 			case 'nucleus':
-				this.drawNucleus(ctx, size, pixelSize, variant);
+				this.drawNucleus(ctx, size, px, variant);
 				break;
 			case 'atom':
-				this.drawAtom(ctx, size, pixelSize, variant);
+				this.drawAtom(ctx, size, px, variant);
 				break;
 			case 'molecule':
-				this.drawMolecule(ctx, size, pixelSize, variant);
+				this.drawMolecule(ctx, size, px, variant);
 				break;
 			case 'cell':
-				this.drawCell(ctx, size, pixelSize, variant);
+				this.drawCell(ctx, size, px, variant);
 				break;
 			case 'human':
-				this.drawHuman(ctx, size, pixelSize, variant);
+				this.drawHuman(ctx, size, px, variant);
 				break;
 			case 'earth':
-				this.drawCity(ctx, size, pixelSize, variant);
+				this.drawCity(ctx, size, px, variant);
 				break;
 			case 'solar':
-				this.drawPlanet(ctx, size, pixelSize, variant);
+				this.drawPlanet(ctx, size, px, variant);
 				break;
 			case 'stellar':
-				this.drawStar(ctx, size, pixelSize, variant);
+				this.drawStar(ctx, size, px, variant);
 				break;
 			case 'cosmic':
-				this.drawGalaxy(ctx, size, pixelSize, variant);
+				this.drawGalaxy(ctx, size, px, variant);
 				break;
 			default:
-				this.drawGeneric(ctx, size, pixelSize);
+				this.drawGeneric(ctx, size);
 		}
 	}
 
@@ -207,7 +184,6 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Triplet of colored points with wavy connections
 		const colors = ['#ff0066', '#00ffff', '#ffff00'];
 		const angles = [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3];
 
@@ -219,12 +195,10 @@ export class PlaceholderLayer implements ILayer {
 			const y = Math.sin(angle) * r;
 
 			ctx.fillStyle = colors[i] ?? '#fff';
-			ctx.globalAlpha = 0.9;
 			ctx.beginPath();
 			ctx.arc(x, y, px * 2, 0, Math.PI * 2);
 			ctx.fill();
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawNucleus(
@@ -233,7 +207,6 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Cluster of protons (red) and neutrons (blue)
 		const count = 4 + variant * 2;
 		for (let i = 0; i < count; i++) {
 			const angle = (i / count) * Math.PI * 2;
@@ -242,12 +215,10 @@ export class PlaceholderLayer implements ILayer {
 			const y = Math.sin(angle) * r;
 
 			ctx.fillStyle = i % 2 === 0 ? '#ff4444' : '#4444ff';
-			ctx.globalAlpha = 0.85;
 			ctx.beginPath();
 			ctx.arc(x, y, px * 1.5, 0, Math.PI * 2);
 			ctx.fill();
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawAtom(
@@ -256,17 +227,15 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Nucleus center + electron orbits
+		// Nucleus
 		ctx.fillStyle = '#4444ff';
-		ctx.globalAlpha = 0.7;
 		ctx.beginPath();
 		ctx.arc(0, 0, px * 2, 0, Math.PI * 2);
 		ctx.fill();
 
 		// Electron orbits
 		ctx.strokeStyle = '#00aaff';
-		ctx.lineWidth = 1;
-		ctx.globalAlpha = 0.4;
+		ctx.lineWidth = Math.max(1, px * 0.3);
 		for (let i = 0; i < 2 + variant; i++) {
 			ctx.save();
 			ctx.rotate((i * Math.PI) / (2 + variant));
@@ -278,7 +247,6 @@ export class PlaceholderLayer implements ILayer {
 
 		// Electrons
 		ctx.fillStyle = '#00ffff';
-		ctx.globalAlpha = 0.9;
 		const electronAngle = this.animTime * 3 + variant;
 		ctx.beginPath();
 		ctx.arc(
@@ -289,7 +257,6 @@ export class PlaceholderLayer implements ILayer {
 			Math.PI * 2,
 		);
 		ctx.fill();
-		ctx.globalAlpha = 1;
 	}
 
 	private drawMolecule(
@@ -298,7 +265,6 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Connected atoms
 		const atoms = 3 + variant;
 		const positions: Array<{ x: number; y: number }> = [];
 
@@ -310,8 +276,7 @@ export class PlaceholderLayer implements ILayer {
 
 		// Bonds
 		ctx.strokeStyle = '#888';
-		ctx.lineWidth = px * 0.5;
-		ctx.globalAlpha = 0.6;
+		ctx.lineWidth = Math.max(1, px * 0.5);
 		for (let i = 0; i < positions.length; i++) {
 			const p1 = positions[i];
 			const p2 = positions[(i + 1) % positions.length];
@@ -325,7 +290,6 @@ export class PlaceholderLayer implements ILayer {
 
 		// Atoms
 		const atomColors = ['#ff6666', '#66ff66', '#6666ff', '#ffff66'];
-		ctx.globalAlpha = 0.85;
 		for (let i = 0; i < positions.length; i++) {
 			const p = positions[i];
 			if (p) {
@@ -335,7 +299,6 @@ export class PlaceholderLayer implements ILayer {
 				ctx.fill();
 			}
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawCell(
@@ -344,24 +307,21 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Cell membrane
+		// Membrane
 		ctx.strokeStyle = '#00aa88';
-		ctx.lineWidth = px;
-		ctx.globalAlpha = 0.6;
+		ctx.lineWidth = Math.max(1, px);
 		ctx.beginPath();
 		ctx.ellipse(0, 0, size * 0.4, size * 0.3, variant * 0.3, 0, Math.PI * 2);
 		ctx.stroke();
 
 		// Nucleus
 		ctx.fillStyle = '#884488';
-		ctx.globalAlpha = 0.7;
 		ctx.beginPath();
 		ctx.arc(size * 0.05, 0, size * 0.12, 0, Math.PI * 2);
 		ctx.fill();
 
 		// Organelles
 		ctx.fillStyle = '#44aa44';
-		ctx.globalAlpha = 0.5;
 		for (let i = 0; i < 3 + variant; i++) {
 			const angle = (i / (3 + variant)) * Math.PI * 2;
 			const r = size * 0.2;
@@ -375,7 +335,6 @@ export class PlaceholderLayer implements ILayer {
 			);
 			ctx.fill();
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawHuman(
@@ -384,14 +343,12 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Pixel art person (simplified)
-		const colors = ['#ffcc99', '#ff6666', '#6666ff', '#66ff66'];
+		const colors = ['#ff6666', '#6666ff', '#66ff66', '#ffff66'];
 		const skinColor = '#ffcc99';
 		const shirtColor = colors[variant] ?? '#ff6666';
 
 		// Head
 		ctx.fillStyle = skinColor;
-		ctx.globalAlpha = 0.9;
 		ctx.fillRect(-px * 1.5, -size * 0.35, px * 3, px * 3);
 
 		// Body
@@ -402,8 +359,6 @@ export class PlaceholderLayer implements ILayer {
 		ctx.fillStyle = '#4444aa';
 		ctx.fillRect(-px * 2, -size * 0.35 + px * 7, px * 1.5, px * 3);
 		ctx.fillRect(px * 0.5, -size * 0.35 + px * 7, px * 1.5, px * 3);
-
-		ctx.globalAlpha = 1;
 	}
 
 	private drawCity(
@@ -412,9 +367,7 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Buildings
 		const buildings = 3 + variant;
-		ctx.globalAlpha = 0.8;
 
 		for (let i = 0; i < buildings; i++) {
 			const bWidth = px * (2 + (i % 2));
@@ -426,7 +379,6 @@ export class PlaceholderLayer implements ILayer {
 
 			// Windows
 			ctx.fillStyle = '#ffff88';
-			ctx.globalAlpha = 0.6;
 			for (let w = 0; w < bHeight / px - 1; w++) {
 				if ((w + i) % 2 === 0) {
 					ctx.fillRect(
@@ -437,9 +389,7 @@ export class PlaceholderLayer implements ILayer {
 					);
 				}
 			}
-			ctx.globalAlpha = 0.8;
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawPlanet(
@@ -448,34 +398,28 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Planet sphere
 		const colors = ['#ff8844', '#88aaff', '#ffaa44', '#aaffaa'];
 		const planetColor = colors[variant] ?? '#ff8844';
 
 		ctx.fillStyle = planetColor;
-		ctx.globalAlpha = 0.85;
 		ctx.beginPath();
 		ctx.arc(0, 0, size * 0.3, 0, Math.PI * 2);
 		ctx.fill();
 
-		// Ring (for some variants)
+		// Ring for some variants
 		if (variant === 1 || variant === 3) {
 			ctx.strokeStyle = '#ccaa88';
-			ctx.lineWidth = px;
-			ctx.globalAlpha = 0.5;
+			ctx.lineWidth = Math.max(1, px);
 			ctx.beginPath();
 			ctx.ellipse(0, 0, size * 0.5, size * 0.1, 0.3, 0, Math.PI * 2);
 			ctx.stroke();
 		}
 
 		// Surface detail
-		ctx.fillStyle = '#00000033';
-		ctx.globalAlpha = 0.3;
+		ctx.fillStyle = '#00000044';
 		ctx.beginPath();
 		ctx.arc(size * 0.05, -size * 0.05, size * 0.1, 0, Math.PI * 2);
 		ctx.fill();
-
-		ctx.globalAlpha = 1;
 	}
 
 	private drawStar(
@@ -484,7 +428,6 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Glowing star
 		const colors = ['#ffffff', '#ffff88', '#ff8844', '#88aaff'];
 		const starColor = colors[variant] ?? '#ffffff';
 
@@ -495,7 +438,6 @@ export class PlaceholderLayer implements ILayer {
 		gradient.addColorStop(1, 'transparent');
 
 		ctx.fillStyle = gradient;
-		ctx.globalAlpha = 0.9;
 		ctx.beginPath();
 		ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
 		ctx.fill();
@@ -508,8 +450,7 @@ export class PlaceholderLayer implements ILayer {
 
 		// Rays
 		ctx.strokeStyle = starColor;
-		ctx.lineWidth = px * 0.5;
-		ctx.globalAlpha = 0.4;
+		ctx.lineWidth = Math.max(1, px * 0.5);
 		for (let i = 0; i < 4; i++) {
 			const angle = (i * Math.PI) / 2 + this.animTime * 0.5;
 			ctx.beginPath();
@@ -517,7 +458,6 @@ export class PlaceholderLayer implements ILayer {
 			ctx.lineTo(Math.cos(angle) * size * 0.5, Math.sin(angle) * size * 0.5);
 			ctx.stroke();
 		}
-		ctx.globalAlpha = 1;
 	}
 
 	private drawGalaxy(
@@ -526,8 +466,6 @@ export class PlaceholderLayer implements ILayer {
 		px: number,
 		variant: number,
 	): void {
-		// Spiral galaxy
-		ctx.globalAlpha = 0.7;
 		const arms = 2 + (variant % 2);
 		const points = 30;
 
@@ -539,12 +477,12 @@ export class PlaceholderLayer implements ILayer {
 				const angle = armOffset + t * Math.PI * 2 + this.animTime * 0.2;
 				const r = t * size * 0.4;
 				const x = Math.cos(angle) * r;
-				const y = Math.sin(angle) * r * 0.4; // Flatten
+				const y = Math.sin(angle) * r * 0.4;
 
 				const brightness = 1 - t * 0.5;
 				ctx.fillStyle = `rgba(200, 180, 255, ${brightness})`;
 				ctx.beginPath();
-				ctx.arc(x, y, px * (1 - t * 0.5), 0, Math.PI * 2);
+				ctx.arc(x, y, Math.max(1, px * (1 - t * 0.5)), 0, Math.PI * 2);
 				ctx.fill();
 			}
 		}
@@ -558,18 +496,10 @@ export class PlaceholderLayer implements ILayer {
 		ctx.beginPath();
 		ctx.arc(0, 0, size * 0.15, 0, Math.PI * 2);
 		ctx.fill();
-
-		ctx.globalAlpha = 1;
 	}
 
-	private drawGeneric(
-		ctx: CanvasRenderingContext2D,
-		size: number,
-		_px: number,
-	): void {
+	private drawGeneric(ctx: CanvasRenderingContext2D, size: number): void {
 		ctx.fillStyle = this.color;
-		ctx.globalAlpha = 0.7;
 		ctx.fillRect(-size / 4, -size / 4, size / 2, size / 2);
-		ctx.globalAlpha = 1;
 	}
 }
