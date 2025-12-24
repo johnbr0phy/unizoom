@@ -1,0 +1,20 @@
+{
+	"name": "powers-of-ten",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview",
+		"check": "biome check --write && tsc --noEmit && vitest run",
+		"test": "vitest",
+		"test:watch": "vitest watch"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"typescript": "^5.6.3",
+		"vite": "^6.0.3",
+		"vitest": "^2.1.8"
+	}
+}
