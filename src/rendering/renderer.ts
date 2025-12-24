@@ -3,6 +3,12 @@ import type { LayerConfig } from '@/layers/types';
 import { getLayerOpacity, getVisibleLayers } from '@/layers/visibility';
 import { getCanvasSize } from './canvas';
 
+export function updateLayers(layers: LayerConfig[], deltaTime: number): void {
+	for (const config of layers) {
+		config.layer.update?.(deltaTime);
+	}
+}
+
 export function render(
 	ctx: CanvasRenderingContext2D,
 	camera: Camera,

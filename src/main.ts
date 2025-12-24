@@ -1,7 +1,7 @@
 import { createCamera, updateCamera } from '@/core';
 import { setupTouchZoom, setupWheelZoom } from '@/input';
 import { LAYERS } from '@/layers';
-import { render, setupCanvas, startLoop } from '@/rendering';
+import { render, setupCanvas, startLoop, updateLayers } from '@/rendering';
 import { ScaleIndicator } from '@/ui';
 
 console.log('Powers of Ten — Starting...');
@@ -24,6 +24,9 @@ startLoop(
 	(deltaTime) => {
 		// Update camera (smooth animation toward target)
 		updateCamera(camera, deltaTime);
+
+		// Update all layers (for animations)
+		updateLayers(LAYERS, deltaTime);
 
 		// Update UI
 		scaleIndicator.update(camera.logScale, LAYERS);
