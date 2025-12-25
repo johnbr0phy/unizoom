@@ -2,7 +2,7 @@ import type { ILayer } from '@/layers/types';
 import { getCanvasSize } from '@/rendering/canvas';
 import { gameState } from './GameState';
 import { rowColToPos, trillionGrid } from './TrillionGrid';
-import { GRID_SIZE, LEVEL_CONFIG } from './types';
+import { LEVEL_CONFIG } from './types';
 
 export class GridLayer implements ILayer {
 	private readonly midLogScale: number;
@@ -57,97 +57,45 @@ export class GridLayer implements ILayer {
 			const gridSize = gameState.squaresPerSide;
 			const gridOffset = gameState.getGridOffset();
 
-			// For small grids (level 1-3), draw centered grid without tiling
-			// For larger grids, tile across the screen
-			if (gridSize <= 3) {
-				// Draw a centered grid of squares
-				const totalGridSize = gridSize * spacing;
-				const gridStartX = centerX - totalGridSize / 2 + spacing / 2;
-				const gridStartY = centerY - totalGridSize / 2 + spacing / 2;
+			// Always draw a centered grid
+			const totalGridSize = gridSize * spacing;
+			const gridStartX = centerX - totalGridSize / 2 + spacing / 2;
+			const gridStartY = centerY - totalGridSize / 2 + spacing / 2;
 
-				for (let gridRow = 0; gridRow < gridSize; gridRow++) {
-					for (let gridCol = 0; gridCol < gridSize; gridCol++) {
-						const row = gridOffset + gridRow;
-						const col = gridOffset + gridCol;
-						const pos = rowColToPos(row, col);
-						const partialAddress = [...this.getParentPath(), pos];
+			for (let gridRow = 0; gridRow < gridSize; gridRow++) {
+				for (let gridCol = 0; gridCol < gridSize; gridCol++) {
+					const row = gridOffset + gridRow;
+					const col = gridOffset + gridCol;
+					const pos = rowColToPos(row, col);
+					const partialAddress = [...this.getParentPath(), pos];
 
-						const isDeleted = trillionGrid.isDeletedAtLevel(
-							partialAddress,
-							this.levelIndex,
+					const isDeleted = trillionGrid.isDeletedAtLevel(
+						partialAddress,
+						this.levelIndex,
+					);
+
+					if (!isDeleted) {
+						const x = gridStartX + gridCol * spacing;
+						const y = gridStartY + gridRow * spacing;
+
+						// Vignette effect for larger grids
+						const dx = (x - centerX) / width;
+						const dy = (y - centerY) / height;
+						const dist = Math.sqrt(dx * dx + dy * dy);
+						const alpha = gridSize <= 3 ? 0.9 : Math.max(0.3, 1 - dist * 0.8);
+
+						ctx.globalAlpha = alpha * 0.9;
+						ctx.fillRect(
+							x - squareSize / 2,
+							y - squareSize / 2,
+							squareSize,
+							squareSize,
 						);
 
-						if (!isDeleted) {
-							const x = gridStartX + gridCol * spacing;
-							const y = gridStartY + gridRow * spacing;
-
-							ctx.globalAlpha = 0.9;
-							ctx.fillRect(
-								x - squareSize / 2,
-								y - squareSize / 2,
-								squareSize,
-								squareSize,
-							);
-
-							if (this.levelIndex < 5 && squareSize > 40) {
-								this.drawNestedHint(ctx, x, y, squareSize);
-							}
+						if (this.levelIndex < 5 && squareSize > 40) {
+							this.drawNestedHint(ctx, x, y, squareSize);
 						}
 					}
-				}
-			} else {
-				// Tile across the screen for larger grids
-				const offsetX = centerX % spacing;
-				const offsetY = centerY % spacing;
-				const startX = -spacing + offsetX;
-				const startY = -spacing + offsetY;
-				const maxBound = gridOffset + gridSize - 1;
-
-				let tileCol = 0;
-				for (let x = startX; x < width + spacing; x += spacing) {
-					let tileRow = 0;
-					for (let y = startY; y < height + spacing; y += spacing) {
-						const row = tileRow % GRID_SIZE;
-						const col = tileCol % GRID_SIZE;
-
-						const inBounds =
-							row >= gridOffset &&
-							row <= maxBound &&
-							col >= gridOffset &&
-							col <= maxBound;
-
-						if (inBounds) {
-							const pos = rowColToPos(row, col);
-							const partialAddress = [...this.getParentPath(), pos];
-
-							const isDeleted = trillionGrid.isDeletedAtLevel(
-								partialAddress,
-								this.levelIndex,
-							);
-
-							if (!isDeleted) {
-								const dx = (x - centerX) / width;
-								const dy = (y - centerY) / height;
-								const dist = Math.sqrt(dx * dx + dy * dy);
-								const alpha = Math.max(0, 1 - dist * 1.2);
-
-								ctx.globalAlpha = alpha * 0.85;
-								ctx.fillRect(
-									x - squareSize / 2,
-									y - squareSize / 2,
-									squareSize,
-									squareSize,
-								);
-
-								if (this.levelIndex < 5 && squareSize > 40) {
-									this.drawNestedHint(ctx, x, y, squareSize);
-								}
-							}
-						}
-
-						tileRow++;
-					}
-					tileCol++;
 				}
 			}
 			ctx.globalAlpha = 1;
@@ -251,71 +199,39 @@ export class GridLayer implements ILayer {
 		const gridOffset = gameState.getGridOffset();
 		const halfSize = squareSize / 2;
 
-		let row: number;
-		let col: number;
+		// Centered grid - calculate position relative to center
+		const totalGridSize = gridSize * spacing;
+		const gridStartX = centerX - totalGridSize / 2 + spacing / 2;
+		const gridStartY = centerY - totalGridSize / 2 + spacing / 2;
 
-		if (gridSize <= 3) {
-			// Centered grid - calculate position relative to center
-			const totalGridSize = gridSize * spacing;
-			const gridStartX = centerX - totalGridSize / 2 + spacing / 2;
-			const gridStartY = centerY - totalGridSize / 2 + spacing / 2;
+		const relX = screenX - gridStartX;
+		const relY = screenY - gridStartY;
 
-			const relX = screenX - gridStartX;
-			const relY = screenY - gridStartY;
+		const clickCol = Math.floor((relX + spacing / 2) / spacing);
+		const clickRow = Math.floor((relY + spacing / 2) / spacing);
 
-			const clickCol = Math.floor((relX + spacing / 2) / spacing);
-			const clickRow = Math.floor((relY + spacing / 2) / spacing);
-
-			// Check bounds
-			if (
-				clickRow < 0 ||
-				clickRow >= gridSize ||
-				clickCol < 0 ||
-				clickCol >= gridSize
-			) {
-				return false;
-			}
-
-			// Check if click is within the square
-			const sqCenterX = clickCol * spacing;
-			const sqCenterY = clickRow * spacing;
-			if (
-				Math.abs(relX - sqCenterX) > halfSize ||
-				Math.abs(relY - sqCenterY) > halfSize
-			) {
-				return false;
-			}
-
-			row = gridOffset + clickRow;
-			col = gridOffset + clickCol;
-		} else {
-			// Tiled grid
-			const offsetX = centerX % spacing;
-			const offsetY = centerY % spacing;
-			const startX = -spacing + offsetX;
-			const startY = -spacing + offsetY;
-
-			const relX = screenX - startX;
-			const relY = screenY - startY;
-			const tileCol = Math.floor((relX + spacing / 2) / spacing);
-			const tileRow = Math.floor((relY + spacing / 2) / spacing);
-
-			const sqCenterX = tileCol * spacing;
-			const sqCenterY = tileRow * spacing;
-			if (
-				Math.abs(relX - sqCenterX) > halfSize ||
-				Math.abs(relY - sqCenterY) > halfSize
-			) {
-				return false;
-			}
-
-			row = ((tileRow % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-			col = ((tileCol % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-
-			if (!gameState.isPositionInBounds(row, col)) {
-				return false;
-			}
+		// Check bounds
+		if (
+			clickRow < 0 ||
+			clickRow >= gridSize ||
+			clickCol < 0 ||
+			clickCol >= gridSize
+		) {
+			return false;
 		}
+
+		// Check if click is within the square
+		const sqCenterX = clickCol * spacing;
+		const sqCenterY = clickRow * spacing;
+		if (
+			Math.abs(relX - sqCenterX) > halfSize ||
+			Math.abs(relY - sqCenterY) > halfSize
+		) {
+			return false;
+		}
+
+		const row = gridOffset + clickRow;
+		const col = gridOffset + clickCol;
 
 		const pos = rowColToPos(row, col);
 		const partialAddress = [...this.getParentPath(), pos];
