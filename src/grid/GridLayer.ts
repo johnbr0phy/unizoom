@@ -22,10 +22,7 @@ export class GridLayer implements ILayer {
 		this.levelIndex = levelIndex;
 	}
 
-	// Get the path to the currently centered square at parent levels
 	private getParentPath(): number[] {
-		// For now, we center on square 44 (row 4, col 4 - center of 10x10)
-		// In a full implementation, this would track user navigation
 		return this.currentPath;
 	}
 
@@ -38,73 +35,78 @@ export class GridLayer implements ILayer {
 		ctx.fillStyle = '#000';
 		ctx.fillRect(0, 0, width, height);
 
-		// Scale factor relative to this level's reference point
+		// Scale factor: squares grow as you zoom in
 		const scaleFactor = 10 ** (this.midLogScale - logScale);
 
-		// Base size of entire grid at reference scale
-		const baseGridSize = Math.min(width, height) * 0.8;
-		const gridSize = baseGridSize * scaleFactor;
+		// Base square size - large enough to feel vast
+		const baseSize = 80;
+		const squareSize = baseSize * scaleFactor;
 
-		// Size of each cell
-		const cellSize = gridSize / GRID_SIZE;
-		const cellPadding = cellSize * 0.1;
-		const squareSize = cellSize - cellPadding * 2;
+		// Spacing between squares
+		const spacing = squareSize * 1.4;
 
-		// Grid position (centered)
-		const gridLeft = centerX - gridSize / 2;
-		const gridTop = centerY - gridSize / 2;
+		// Maximum dimension for visibility check
+		const maxDim = Math.max(width, height) * 2;
 
-		// Only draw if grid is reasonable size
-		const maxDim = Math.max(width, height) * 3;
-		if (gridSize > 10 && gridSize < maxDim) {
-			// Draw the 10x10 grid
-			for (let row = 0; row < GRID_SIZE; row++) {
-				for (let col = 0; col < GRID_SIZE; col++) {
+		// Only draw if squares are visible size
+		if (squareSize > 0.5 && squareSize < maxDim) {
+			ctx.fillStyle = this.color;
+
+			// Calculate offset to keep grid centered on screen
+			const offsetX = centerX % spacing;
+			const offsetY = centerY % spacing;
+
+			// Start positions (extend beyond screen edges)
+			const startX = -spacing + offsetX;
+			const startY = -spacing + offsetY;
+
+			// Draw grid of squares filling the entire screen
+			let gridCol = 0;
+			for (let x = startX; x < width + spacing; x += spacing) {
+				let gridRow = 0;
+				for (let y = startY; y < height + spacing; y += spacing) {
+					// Map to 10x10 grid position (wrapping)
+					const row = gridRow % GRID_SIZE;
+					const col = gridCol % GRID_SIZE;
 					const pos = rowColToPos(row, col);
 					const partialAddress = [...this.getParentPath(), pos];
 
 					// Check if this square is deleted
-					if (trillionGrid.isDeletedAtLevel(partialAddress, this.levelIndex)) {
-						continue; // Don't draw deleted squares
+					const isDeleted = trillionGrid.isDeletedAtLevel(
+						partialAddress,
+						this.levelIndex,
+					);
+
+					if (!isDeleted) {
+						// Distance from center affects opacity (vignette effect)
+						const dx = (x - centerX) / width;
+						const dy = (y - centerY) / height;
+						const dist = Math.sqrt(dx * dx + dy * dy);
+						const alpha = Math.max(0, 1 - dist * 1.2);
+
+						ctx.globalAlpha = alpha * 0.85;
+						ctx.fillRect(
+							x - squareSize / 2,
+							y - squareSize / 2,
+							squareSize,
+							squareSize,
+						);
+
+						// Draw nested hint showing next level (when squares are large enough)
+						if (this.levelIndex < 5 && squareSize > 40) {
+							this.drawNestedHint(ctx, x, y, squareSize);
+						}
 					}
 
-					const x = gridLeft + col * cellSize + cellPadding;
-					const y = gridTop + row * cellSize + cellPadding;
-
-					// Distance from center for vignette
-					const dx = (x + squareSize / 2 - centerX) / width;
-					const dy = (y + squareSize / 2 - centerY) / height;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					const alpha = Math.max(0.2, 1 - dist * 0.8);
-
-					ctx.globalAlpha = alpha * 0.9;
-					ctx.fillStyle = this.color;
-					ctx.fillRect(x, y, squareSize, squareSize);
-
-					// Draw nested hint for next level down (if not at deepest level)
-					if (this.levelIndex < 5 && squareSize > 20) {
-						this.drawNestedHint(ctx, x, y, squareSize);
-					}
+					gridRow++;
 				}
+				gridCol++;
 			}
 			ctx.globalAlpha = 1;
-
-			// Draw grid lines
-			ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-			ctx.lineWidth = 1;
-			for (let i = 0; i <= GRID_SIZE; i++) {
-				// Vertical lines
-				ctx.beginPath();
-				ctx.moveTo(gridLeft + i * cellSize, gridTop);
-				ctx.lineTo(gridLeft + i * cellSize, gridTop + gridSize);
-				ctx.stroke();
-				// Horizontal lines
-				ctx.beginPath();
-				ctx.moveTo(gridLeft, gridTop + i * cellSize);
-				ctx.lineTo(gridLeft + gridSize, gridTop + i * cellSize);
-				ctx.stroke();
-			}
 		}
+
+		// Draw nested squares in center (representing zoom depth)
+		this.drawCenterNest(ctx, centerX, centerY, squareSize);
 
 		// Label
 		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -113,12 +115,12 @@ export class GridLayer implements ILayer {
 		ctx.textBaseline = 'middle';
 		ctx.fillText(this.label, centerX, height - 40);
 
-		// Show level info
+		// Level info
 		ctx.font = '14px monospace';
-		ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-		const remaining = 100 - this.countDeletedAtLevel();
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+		const deleted = this.countDeletedAtLevel();
 		ctx.fillText(
-			`Level ${this.levelIndex + 1}/6 • ${remaining}/100 squares`,
+			`Level ${this.levelIndex + 1}/6 • ${deleted} deleted`,
 			centerX,
 			height - 70,
 		);
@@ -126,30 +128,55 @@ export class GridLayer implements ILayer {
 
 	private drawNestedHint(
 		ctx: CanvasRenderingContext2D,
-		x: number,
-		y: number,
+		cx: number,
+		cy: number,
 		size: number,
 	): void {
-		// Draw a tiny 3x3 grid hint inside each square
-		const padding = size * 0.2;
-		const innerSize = size - padding * 2;
-		const miniCellSize = innerSize / 3;
+		// Draw a subtle 3x3 grid inside to hint at deeper structure
+		const innerSize = size * 0.6;
+		const cellSize = innerSize / 3;
+		const left = cx - innerSize / 2;
+		const top = cy - innerSize / 2;
 
-		ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-		ctx.lineWidth = 0.5;
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+		ctx.lineWidth = 1;
 
 		for (let i = 0; i <= 3; i++) {
-			// Vertical
 			ctx.beginPath();
-			ctx.moveTo(x + padding + i * miniCellSize, y + padding);
-			ctx.lineTo(x + padding + i * miniCellSize, y + padding + innerSize);
+			ctx.moveTo(left + i * cellSize, top);
+			ctx.lineTo(left + i * cellSize, top + innerSize);
 			ctx.stroke();
-			// Horizontal
+
 			ctx.beginPath();
-			ctx.moveTo(x + padding, y + padding + i * miniCellSize);
-			ctx.lineTo(x + padding + innerSize, y + padding + i * miniCellSize);
+			ctx.moveTo(left, top + i * cellSize);
+			ctx.lineTo(left + innerSize, top + i * cellSize);
 			ctx.stroke();
 		}
+	}
+
+	private drawCenterNest(
+		ctx: CanvasRenderingContext2D,
+		cx: number,
+		cy: number,
+		baseSize: number,
+	): void {
+		// Draw nested squares showing zoom depth
+		const levels = 6;
+		const shrinkFactor = 0.35;
+
+		ctx.strokeStyle = this.color;
+		ctx.lineWidth = 2;
+
+		let size = baseSize * 0.7;
+		for (let i = 0; i < levels; i++) {
+			size *= shrinkFactor;
+			if (size < 2) break;
+
+			const alpha = 0.5 - i * 0.08;
+			ctx.globalAlpha = Math.max(0.1, alpha);
+			ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
+		}
+		ctx.globalAlpha = 1;
 	}
 
 	private countDeletedAtLevel(): number {
@@ -166,7 +193,6 @@ export class GridLayer implements ILayer {
 		return count;
 	}
 
-	// Handle click at screen position
 	handleClick(screenX: number, screenY: number, logScale: number): boolean {
 		const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 		if (!canvas) return false;
@@ -176,47 +202,57 @@ export class GridLayer implements ILayer {
 		const centerY = height / 2;
 
 		const scaleFactor = 10 ** (this.midLogScale - logScale);
-		const baseGridSize = Math.min(width, height) * 0.8;
-		const gridSize = baseGridSize * scaleFactor;
-		const cellSize = gridSize / GRID_SIZE;
+		const baseSize = 80;
+		const squareSize = baseSize * scaleFactor;
+		const spacing = squareSize * 1.4;
 
-		const gridLeft = centerX - gridSize / 2;
-		const gridTop = centerY - gridSize / 2;
-
-		// Check if click is within grid
-		if (
-			screenX < gridLeft ||
-			screenX > gridLeft + gridSize ||
-			screenY < gridTop ||
-			screenY > gridTop + gridSize
-		) {
+		// Don't handle clicks if squares aren't visible
+		const maxDim = Math.max(width, height) * 2;
+		if (squareSize < 0.5 || squareSize > maxDim) {
 			return false;
 		}
 
-		// Calculate which cell was clicked
-		const col = Math.floor((screenX - gridLeft) / cellSize);
-		const row = Math.floor((screenY - gridTop) / cellSize);
+		// Calculate which grid position was clicked
+		const offsetX = centerX % spacing;
+		const offsetY = centerY % spacing;
+		const startX = -spacing + offsetX;
+		const startY = -spacing + offsetY;
 
-		if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
-			const pos = rowColToPos(row, col);
-			const partialAddress = [...this.getParentPath(), pos];
+		// Find which cell contains the click
+		const relX = screenX - startX;
+		const relY = screenY - startY;
+		const gridCol = Math.floor(relX / spacing);
+		const gridRow = Math.floor(relY / spacing);
 
-			// Toggle deletion
-			if (!trillionGrid.isDeletedAtLevel(partialAddress, this.levelIndex)) {
-				trillionGrid.deleteAtLevel(partialAddress, this.levelIndex);
-				console.log(
-					`Deleted square at level ${this.levelIndex}:`,
-					partialAddress,
-				);
-				return true;
-			}
+		// Check if click is within a square (not in the gap)
+		const cellX = relX - gridCol * spacing;
+		const cellY = relY - gridRow * spacing;
+		const halfSize = squareSize / 2;
+		const cellCenterOffset = spacing / 2;
+
+		if (
+			Math.abs(cellX - cellCenterOffset) > halfSize ||
+			Math.abs(cellY - cellCenterOffset) > halfSize
+		) {
+			return false; // Clicked in the gap between squares
+		}
+
+		// Map to 10x10 grid
+		const row = ((gridRow % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+		const col = ((gridCol % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+		const pos = rowColToPos(row, col);
+		const partialAddress = [...this.getParentPath(), pos];
+
+		if (!trillionGrid.isDeletedAtLevel(partialAddress, this.levelIndex)) {
+			trillionGrid.deleteAtLevel(partialAddress, this.levelIndex);
+			console.log(`Deleted square [${row},${col}] at level ${this.levelIndex}`);
+			return true;
 		}
 
 		return false;
 	}
 }
 
-// Export level configs for registry
 export function createGridLayers(): GridLayer[] {
 	return LEVEL_CONFIG.map(
 		(config, index) =>
