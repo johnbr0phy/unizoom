@@ -219,21 +219,20 @@ export class GridLayer implements ILayer {
 		const startY = -spacing + offsetY;
 
 		// Find which cell contains the click
+		// Note: startX/startY are the CENTER positions of the first square
 		const relX = screenX - startX;
 		const relY = screenY - startY;
-		const gridCol = Math.floor(relX / spacing);
-		const gridRow = Math.floor(relY / spacing);
+		const gridCol = Math.floor((relX + spacing / 2) / spacing);
+		const gridRow = Math.floor((relY + spacing / 2) / spacing);
 
 		// Check if click is within a square (not in the gap)
-		const cellX = relX - gridCol * spacing;
-		const cellY = relY - gridRow * spacing;
+		const squareCenterX = gridCol * spacing;
+		const squareCenterY = gridRow * spacing;
+		const distFromCenterX = Math.abs(relX - squareCenterX);
+		const distFromCenterY = Math.abs(relY - squareCenterY);
 		const halfSize = squareSize / 2;
-		const cellCenterOffset = spacing / 2;
 
-		if (
-			Math.abs(cellX - cellCenterOffset) > halfSize ||
-			Math.abs(cellY - cellCenterOffset) > halfSize
-		) {
+		if (distFromCenterX > halfSize || distFromCenterY > halfSize) {
 			return false; // Clicked in the gap between squares
 		}
 
