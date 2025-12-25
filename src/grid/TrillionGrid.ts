@@ -93,6 +93,11 @@ export class TrillionGrid {
 		this.deletedByLevel.clear();
 	}
 
+	// Clear deletions for a specific layer
+	resetLayer(level: number): void {
+		this.deletedByLevel.delete(level);
+	}
+
 	// Export state for persistence
 	export(): Record<number, string[]> {
 		const result: Record<number, string[]> = {};

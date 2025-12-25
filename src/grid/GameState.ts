@@ -1,66 +1,96 @@
 import { trillionGrid } from './TrillionGrid';
 import { LEVEL_CONFIG } from './types';
 
-// Game progression: each game level multiplies squares by 10
-// Level 1: 1 square per layer (1x1)
-// Level 2: 10 squares per layer (not quite 10, let's do 2x2=4, then 3x3=9, close to 10)
-// Actually let's do: 1, 4, 9, 16, 25, 36, 49, 64, 81, 100 (perfect squares)
-// Or simpler: 1, 10, 100 (powers of 10, grid size 1x1, ~3x3, 10x10)
-
-// Let's use grid dimensions that make visual sense:
+// Game progression: each layer levels up independently
 // Level 1: 1x1 = 1 square
 // Level 2: 2x2 = 4 squares
 // Level 3: 3x3 = 9 squares
-// Level 4: 4x4 = 16 squares
-// Level 5: 5x5 = 25 squares
 // ...
-// Level 10: 10x10 = 100 squares (full grid)
+// Level 10: 10x10 = 100 squares (max)
 
-export interface GameState {
+export interface LayerProgress {
 	level: number;
-	squaresPerSide: number; // 1, 2, 3, ... 10
-	totalSquaresPerLayer: number; // 1, 4, 9, 16, ... 100
+	squaresPerSide: number;
+	totalSquares: number;
+	deleted: number;
 }
 
 class GameStateManager {
-	private _level = 1;
+	// Per-layer levels (0-5 for each of 6 layers)
+	private layerLevels: number[] = [1, 1, 1, 1, 1, 1];
 	private listeners: Array<() => void> = [];
 
-	get level(): number {
-		return this._level;
+	// Get level for a specific layer
+	getLevelForLayer(layerIndex: number): number {
+		return this.layerLevels[layerIndex] ?? 1;
 	}
 
-	get squaresPerSide(): number {
-		return Math.min(this._level, 10);
+	// Get squares per side for a specific layer
+	getSquaresPerSideForLayer(layerIndex: number): number {
+		return Math.min(this.getLevelForLayer(layerIndex), 10);
 	}
 
-	get totalSquaresPerLayer(): number {
-		return this.squaresPerSide ** 2;
+	// Get total squares for a specific layer
+	getTotalSquaresForLayer(layerIndex: number): number {
+		const side = this.getSquaresPerSideForLayer(layerIndex);
+		return side ** 2;
 	}
 
-	get totalSquaresAllLayers(): number {
-		return this.totalSquaresPerLayer * LEVEL_CONFIG.length;
+	// Get grid offset for centering squares at a layer
+	getGridOffsetForLayer(layerIndex: number): number {
+		const side = this.getSquaresPerSideForLayer(layerIndex);
+		return Math.floor((10 - side) / 2);
 	}
 
-	// Check if a position is within current game level bounds
-	isPositionInBounds(row: number, col: number): boolean {
-		const maxIndex = this.squaresPerSide - 1;
-		// Center the active squares in the 10x10 grid
-		const offset = Math.floor((10 - this.squaresPerSide) / 2);
-		const minIndex = offset;
-		const maxBound = offset + maxIndex;
-
-		return (
-			row >= minIndex && row <= maxBound && col >= minIndex && col <= maxBound
-		);
+	// Check if position is in bounds for a layer
+	isPositionInBoundsForLayer(
+		row: number,
+		col: number,
+		layerIndex: number,
+	): boolean {
+		const side = this.getSquaresPerSideForLayer(layerIndex);
+		const offset = this.getGridOffsetForLayer(layerIndex);
+		const maxBound = offset + side - 1;
+		return row >= offset && row <= maxBound && col >= offset && col <= maxBound;
 	}
 
-	// Get offset for centering squares
-	getGridOffset(): number {
-		return Math.floor((10 - this.squaresPerSide) / 2);
+	// Get progress for a specific layer
+	getLayerProgress(layerIndex: number): LayerProgress {
+		const level = this.getLevelForLayer(layerIndex);
+		const squaresPerSide = this.getSquaresPerSideForLayer(layerIndex);
+		const totalSquares = squaresPerSide ** 2;
+		const deleted = trillionGrid.getDeletedCountAtLevel(layerIndex);
+		return { level, squaresPerSide, totalSquares, deleted };
 	}
 
-	// Count total deleted across all layers
+	// Get all layer progress for UI
+	getAllLayerProgress(): Array<
+		LayerProgress & { color: string; name: string }
+	> {
+		return LEVEL_CONFIG.map((config, index) => ({
+			...this.getLayerProgress(index),
+			color: config.color,
+			name: config.name,
+		}));
+	}
+
+	// Check if a layer is complete and level it up
+	checkLayerComplete(layerIndex: number): boolean {
+		const progress = this.getLayerProgress(layerIndex);
+		if (progress.deleted >= progress.totalSquares && progress.level < 10) {
+			const currentLevel = this.layerLevels[layerIndex];
+			if (currentLevel !== undefined) {
+				this.layerLevels[layerIndex] = currentLevel + 1;
+			}
+			// Clear this layer's deletions for the new level
+			trillionGrid.resetLayer(layerIndex);
+			this.notifyListeners();
+			return true;
+		}
+		return false;
+	}
+
+	// Get total deleted across all layers
 	getTotalDeleted(): number {
 		let total = 0;
 		for (let i = 0; i < LEVEL_CONFIG.length; i++) {
@@ -69,40 +99,14 @@ class GameStateManager {
 		return total;
 	}
 
-	// Check if current level is complete
-	isLevelComplete(): boolean {
-		// All squares at all layers must be deleted
-		for (let layerIndex = 0; layerIndex < LEVEL_CONFIG.length; layerIndex++) {
-			const deleted = trillionGrid.getDeletedCountAtLevel(layerIndex);
-			if (deleted < this.totalSquaresPerLayer) {
-				return false;
-			}
-		}
-		return true;
+	// Get sum of all layer levels (for overall progress)
+	getTotalLevels(): number {
+		return this.layerLevels.reduce((sum, level) => sum + level, 0);
 	}
 
-	// Advance to next level
-	nextLevel(): void {
-		if (this._level < 10) {
-			this._level++;
-			// Clear deletions for new level (fresh start with more squares)
-			trillionGrid.reset();
-			this.notifyListeners();
-		}
-	}
-
-	// Check and auto-advance if level complete
-	checkLevelComplete(): boolean {
-		if (this.isLevelComplete()) {
-			this.nextLevel();
-			return true;
-		}
-		return false;
-	}
-
-	// Reset to level 1
+	// Reset everything
 	reset(): void {
-		this._level = 1;
+		this.layerLevels = [1, 1, 1, 1, 1, 1];
 		trillionGrid.reset();
 		this.notifyListeners();
 	}
@@ -119,6 +123,35 @@ class GameStateManager {
 		for (const listener of this.listeners) {
 			listener();
 		}
+	}
+
+	// Legacy compatibility - use layer 0 as default
+	get level(): number {
+		return this.getLevelForLayer(0);
+	}
+
+	get squaresPerSide(): number {
+		return this.getSquaresPerSideForLayer(0);
+	}
+
+	get totalSquaresPerLayer(): number {
+		return this.getTotalSquaresForLayer(0);
+	}
+
+	get totalSquaresAllLayers(): number {
+		let total = 0;
+		for (let i = 0; i < LEVEL_CONFIG.length; i++) {
+			total += this.getTotalSquaresForLayer(i);
+		}
+		return total;
+	}
+
+	getGridOffset(): number {
+		return this.getGridOffsetForLayer(0);
+	}
+
+	isPositionInBounds(row: number, col: number): boolean {
+		return this.isPositionInBoundsForLayer(row, col, 0);
 	}
 }
 

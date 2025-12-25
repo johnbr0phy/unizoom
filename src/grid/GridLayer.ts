@@ -53,9 +53,9 @@ export class GridLayer implements ILayer {
 		if (squareSize > 0.5 && squareSize < maxDim) {
 			ctx.fillStyle = this.color;
 
-			// Get current game level grid size
-			const gridSize = gameState.squaresPerSide;
-			const gridOffset = gameState.getGridOffset();
+			// Get this layer's level and grid size
+			const gridSize = gameState.getSquaresPerSideForLayer(this.levelIndex);
+			const gridOffset = gameState.getGridOffsetForLayer(this.levelIndex);
 
 			// Always draw a centered grid
 			const totalGridSize = gridSize * spacing;
@@ -111,12 +111,15 @@ export class GridLayer implements ILayer {
 		ctx.textBaseline = 'middle';
 		ctx.fillText(this.label, centerX, height - 40);
 
-		// Game level info
+		// Layer level info
 		ctx.font = '14px monospace';
 		ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-		const deleted = this.countDeletedAtLevel();
-		const total = gameState.totalSquaresPerLayer;
-		ctx.fillText(`${deleted}/${total} deleted`, centerX, height - 70);
+		const progress = gameState.getLayerProgress(this.levelIndex);
+		ctx.fillText(
+			`Lv.${progress.level} • ${progress.deleted}/${progress.totalSquares}`,
+			centerX,
+			height - 70,
+		);
 	}
 
 	private drawNestedHint(
@@ -172,10 +175,6 @@ export class GridLayer implements ILayer {
 		ctx.globalAlpha = 1;
 	}
 
-	private countDeletedAtLevel(): number {
-		return trillionGrid.getDeletedCountAtLevel(this.levelIndex);
-	}
-
 	handleClick(screenX: number, screenY: number, logScale: number): boolean {
 		const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 		if (!canvas) return false;
@@ -195,8 +194,8 @@ export class GridLayer implements ILayer {
 			return false;
 		}
 
-		const gridSize = gameState.squaresPerSide;
-		const gridOffset = gameState.getGridOffset();
+		const gridSize = gameState.getSquaresPerSideForLayer(this.levelIndex);
+		const gridOffset = gameState.getGridOffsetForLayer(this.levelIndex);
 		const halfSize = squareSize / 2;
 
 		// Centered grid - calculate position relative to center
@@ -240,9 +239,10 @@ export class GridLayer implements ILayer {
 			trillionGrid.deleteAtLevel(partialAddress, this.levelIndex);
 			console.log(`Deleted square [${row},${col}] at layer ${this.levelIndex}`);
 
-			// Check if level is complete
-			if (gameState.checkLevelComplete()) {
-				console.log(`Level ${gameState.level} complete! Moving to next level.`);
+			// Check if this layer is complete and level it up
+			if (gameState.checkLayerComplete(this.levelIndex)) {
+				const newLevel = gameState.getLevelForLayer(this.levelIndex);
+				console.log(`Layer ${this.levelIndex} leveled up to ${newLevel}!`);
 			}
 
 			return true;

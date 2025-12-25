@@ -6,20 +6,20 @@ import { getVisibleLayers } from '@/layers/visibility';
 export class ScaleIndicator {
 	private scaleValueEl: HTMLElement | null;
 	private layerNameEl: HTMLElement | null;
-	private gameLevelEl: HTMLElement | null;
+	private layerProgressEl: HTMLElement | null;
 
 	constructor(containerId: string) {
 		const container = document.getElementById(containerId);
 		if (!container) {
 			this.scaleValueEl = null;
 			this.layerNameEl = null;
-			this.gameLevelEl = null;
+			this.layerProgressEl = null;
 			return;
 		}
 
 		this.scaleValueEl = container.querySelector('.scale-value');
 		this.layerNameEl = container.querySelector('.layer-name');
-		this.gameLevelEl = container.querySelector('.game-level');
+		this.layerProgressEl = container.querySelector('.layer-progress');
 	}
 
 	update(logScale: number, layers: LayerConfig[]): void {
@@ -33,11 +33,24 @@ export class ScaleIndicator {
 			this.layerNameEl.textContent = names || '—';
 		}
 
-		if (this.gameLevelEl) {
-			const deleted = gameState.getTotalDeleted();
-			const total = gameState.totalSquaresAllLayers;
-			this.gameLevelEl.textContent = `Level ${gameState.level} • ${deleted}/${total}`;
+		if (this.layerProgressEl) {
+			this.updateLayerProgress();
 		}
+	}
+
+	private updateLayerProgress(): void {
+		if (!this.layerProgressEl) return;
+
+		const allProgress = gameState.getAllLayerProgress();
+		this.layerProgressEl.innerHTML = allProgress
+			.map(
+				(p) =>
+					`<div class="layer-row">
+						<span class="layer-dot" style="background: ${p.color}"></span>
+						<span class="layer-info">Lv.${p.level} ${p.deleted}/${p.totalSquares}</span>
+					</div>`,
+			)
+			.join('');
 	}
 }
 

@@ -62,13 +62,29 @@
         opacity: 0.8;
       }
 
-      #scale-indicator .game-level {
+      #scale-indicator .layer-progress {
         margin-top: 8px;
         padding-top: 8px;
         border-top: 1px solid rgba(255, 255, 255, 0.3);
-        font-size: 16px;
-        font-weight: bold;
-        color: #0f0;
+      }
+
+      #scale-indicator .layer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+
+      #scale-indicator .layer-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+
+      #scale-indicator .layer-info {
+        opacity: 0.9;
       }
     </style>
   </head>
@@ -79,7 +95,7 @@
         <div class="scale-bar"></div>
         <div class="scale-value">1.0 m</div>
         <div class="layer-name">Human</div>
-        <div class="game-level">Level 1 • 0/6</div>
+        <div class="layer-progress"></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
