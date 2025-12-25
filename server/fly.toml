@@ -1,4 +1,4 @@
-app = "unizoom-server"
+app = "johnbrophy"
 primary_region = "iad"
 
 [build]
