@@ -1,4 +1,5 @@
 export { GridLayer, createGridLayers } from './GridLayer';
+export { gameState, type GameState } from './GameState';
 export {
 	TrillionGrid,
 	trillionGrid,

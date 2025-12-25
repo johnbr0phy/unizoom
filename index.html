@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Powers of Ten</title>
+    <title>Delete the Universe</title>
     <style>
       * {
         margin: 0;
@@ -61,6 +61,15 @@
         margin-top: 4px;
         opacity: 0.8;
       }
+
+      #scale-indicator .game-level {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
+        font-size: 16px;
+        font-weight: bold;
+        color: #0f0;
+      }
     </style>
   </head>
   <body>
@@ -70,6 +79,7 @@
         <div class="scale-bar"></div>
         <div class="scale-value">1.0 m</div>
         <div class="layer-name">Human</div>
+        <div class="game-level">Level 1 • 0/6</div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
