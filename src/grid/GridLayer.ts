@@ -180,17 +180,7 @@ export class GridLayer implements ILayer {
 	}
 
 	private countDeletedAtLevel(): number {
-		let count = 0;
-		for (let row = 0; row < GRID_SIZE; row++) {
-			for (let col = 0; col < GRID_SIZE; col++) {
-				const pos = rowColToPos(row, col);
-				const partialAddress = [...this.getParentPath(), pos];
-				if (trillionGrid.isDeletedAtLevel(partialAddress, this.levelIndex)) {
-					count++;
-				}
-			}
-		}
-		return count;
+		return trillionGrid.getDeletedCountAtLevel(this.levelIndex);
 	}
 
 	handleClick(screenX: number, screenY: number, logScale: number): boolean {

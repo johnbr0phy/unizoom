@@ -42,74 +42,72 @@ export function isParentOf(
 }
 
 export class TrillionGrid {
-	// Sparse storage: only store deleted squares
-	// Key format: "pos0.pos1.pos2.pos3.pos4.pos5"
-	private deleted: Set<string> = new Set();
+	// Per-level deletion sets - each level tracks its own deleted squares
+	// Key format: "row,col" for each position in the 10x10 grid
+	private deletedByLevel: Map<number, Set<string>> = new Map();
 
-	// Check if a square is deleted
-	isDeleted(address: SquareAddress): boolean {
-		return this.deleted.has(addressToKey(address));
+	private getDeletedSet(level: number): Set<string> {
+		let set = this.deletedByLevel.get(level);
+		if (!set) {
+			set = new Set();
+			this.deletedByLevel.set(level, set);
+		}
+		return set;
 	}
 
-	// Check if a square at a given level is deleted (partial address)
+	// Check if a square is deleted at a specific level
 	isDeletedAtLevel(partialAddress: number[], level: number): boolean {
-		// A square is considered deleted if it OR any of its parents are deleted
-		for (let l = 0; l <= level; l++) {
-			const checkAddr = [...partialAddress.slice(0, l + 1)];
-			// Pad with zeros to make full address for lookup
-			while (checkAddr.length < GRID_LEVELS) {
-				checkAddr.push(0);
-			}
-			if (this.deleted.has(checkAddr.join('.'))) {
-				return true;
-			}
-		}
-		return false;
+		const pos = partialAddress[partialAddress.length - 1];
+		if (pos === undefined) return false;
+		return this.getDeletedSet(level).has(String(pos));
 	}
 
-	// Delete a square (and all its children implicitly)
-	delete(address: SquareAddress): void {
-		this.deleted.add(addressToKey(address));
+	// Delete at a specific level
+	deleteAtLevel(partialAddress: number[], level: number): void {
+		const pos = partialAddress[partialAddress.length - 1];
+		if (pos === undefined) return;
+		this.getDeletedSet(level).add(String(pos));
 	}
 
-	// Delete at a specific level (partial address)
-	deleteAtLevel(partialAddress: number[], _level: number): void {
-		// Create full address padded with zeros
-		const fullAddress = [...partialAddress];
-		while (fullAddress.length < GRID_LEVELS) {
-			fullAddress.push(0);
-		}
-		this.deleted.add(fullAddress.join('.'));
+	// Restore at a specific level
+	restoreAtLevel(pos: number, level: number): void {
+		this.getDeletedSet(level).delete(String(pos));
 	}
 
-	// Restore a deleted square
-	restore(address: SquareAddress): void {
-		this.deleted.delete(addressToKey(address));
+	// Get count of deleted squares at a level
+	getDeletedCountAtLevel(level: number): number {
+		return this.getDeletedSet(level).size;
 	}
 
-	// Get count of deleted squares
+	// Get total deleted across all levels
 	getDeletedCount(): number {
-		return this.deleted.size;
-	}
-
-	// Get all deleted addresses
-	getDeletedAddresses(): SquareAddress[] {
-		return Array.from(this.deleted).map(keyToAddress);
+		let total = 0;
+		for (const set of this.deletedByLevel.values()) {
+			total += set.size;
+		}
+		return total;
 	}
 
 	// Clear all deletions
 	reset(): void {
-		this.deleted.clear();
+		this.deletedByLevel.clear();
 	}
 
 	// Export state for persistence
-	export(): string[] {
-		return Array.from(this.deleted);
+	export(): Record<number, string[]> {
+		const result: Record<number, string[]> = {};
+		for (const [level, set] of this.deletedByLevel.entries()) {
+			result[level] = Array.from(set);
+		}
+		return result;
 	}
 
 	// Import state
-	import(data: string[]): void {
-		this.deleted = new Set(data);
+	import(data: Record<number, string[]>): void {
+		this.deletedByLevel.clear();
+		for (const [level, positions] of Object.entries(data)) {
+			this.deletedByLevel.set(Number(level), new Set(positions));
+		}
 	}
 }
 
