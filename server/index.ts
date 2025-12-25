@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { type WebSocket, WebSocketServer } from 'ws';
 
 // Team colors for players
@@ -99,9 +100,43 @@ function checkLayerComplete(layerIndex: number): boolean {
 }
 
 const port = Number(process.env.PORT) || 8080;
-const wss = new WebSocketServer({ port });
 
-console.log(`WebSocket server running on port ${port}`);
+// Create HTTP server for health checks
+const server = createServer((req, res) => {
+	// CORS headers for health checks
+	res.setHeader('Access-Control-Allow-Origin', '*');
+	res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+	if (req.method === 'OPTIONS') {
+		res.writeHead(204);
+		res.end();
+		return;
+	}
+
+	if (req.url === '/health' || req.url === '/') {
+		res.writeHead(200, { 'Content-Type': 'application/json' });
+		res.end(
+			JSON.stringify({
+				status: 'ok',
+				players: players.size,
+				uptime: process.uptime(),
+			}),
+		);
+		return;
+	}
+
+	res.writeHead(404);
+	res.end('Not found');
+});
+
+// Attach WebSocket server to HTTP server
+const wss = new WebSocketServer({ server });
+
+server.listen(port, () => {
+	console.log(`Server running on port ${port}`);
+	console.log(`Health check: http://localhost:${port}/health`);
+	console.log(`WebSocket: ws://localhost:${port}`);
+});
 
 wss.on('connection', (ws) => {
 	let player: Player | null = null;

@@ -2,15 +2,18 @@
 	"name": "delete-the-universe-server",
 	"private": true,
 	"type": "module",
+	"engines": {
+		"node": ">=18"
+	},
 	"scripts": {
-		"start": "npx tsx index.ts",
+		"start": "node --import tsx index.ts",
 		"dev": "npx tsx watch index.ts"
 	},
 	"dependencies": {
+		"tsx": "^4.19.2",
 		"ws": "^8.18.0"
 	},
 	"devDependencies": {
-		"@types/ws": "^8.5.13",
-		"tsx": "^4.19.2"
+		"@types/ws": "^8.5.13"
 	}
 }
