@@ -1,5 +1,5 @@
-// Scale bounds (10^-16 to 10^26 meters)
-export const MIN_LOG_SCALE = -16; // Quarks
+// Scale bounds (10^0 to 10^26 meters) - 6 levels of trillion-square grid
+export const MIN_LOG_SCALE = 0; // Human scale (1 meter)
 export const MAX_LOG_SCALE = 26; // Observable universe
 
 // Camera animation
