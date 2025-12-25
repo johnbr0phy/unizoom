@@ -1,4 +1,5 @@
 import type { ILayer } from '@/layers/types';
+import { getMultiplayerClient } from '@/multiplayer';
 import { getCanvasSize } from '@/rendering/canvas';
 import { gameState } from './GameState';
 import { rowColToPos, trillionGrid } from './TrillionGrid';
@@ -74,16 +75,34 @@ export class GridLayer implements ILayer {
 						this.levelIndex,
 					);
 
-					if (!isDeleted) {
-						const x = gridStartX + gridCol * spacing;
-						const y = gridStartY + gridRow * spacing;
+					const x = gridStartX + gridCol * spacing;
+					const y = gridStartY + gridRow * spacing;
 
-						// Vignette effect for larger grids
-						const dx = (x - centerX) / width;
-						const dy = (y - centerY) / height;
-						const dist = Math.sqrt(dx * dx + dy * dy);
-						const alpha = gridSize <= 3 ? 0.9 : Math.max(0.3, 1 - dist * 0.8);
+					// Vignette effect for larger grids
+					const dx = (x - centerX) / width;
+					const dy = (y - centerY) / height;
+					const dist = Math.sqrt(dx * dx + dy * dy);
+					const alpha = gridSize <= 3 ? 0.9 : Math.max(0.3, 1 - dist * 0.8);
 
+					if (isDeleted) {
+						// Show deleted square with team color
+						const teamColor = trillionGrid.getDeletedByTeam(
+							pos,
+							this.levelIndex,
+						);
+						if (teamColor) {
+							ctx.fillStyle = teamColor;
+							ctx.globalAlpha = alpha * 0.7;
+							ctx.fillRect(
+								x - squareSize / 2,
+								y - squareSize / 2,
+								squareSize,
+								squareSize,
+							);
+						}
+					} else {
+						// Draw undeleted square with layer color
+						ctx.fillStyle = this.color;
 						ctx.globalAlpha = alpha * 0.9;
 						ctx.fillRect(
 							x - squareSize / 2,
@@ -236,8 +255,19 @@ export class GridLayer implements ILayer {
 		const partialAddress = [...this.getParentPath(), pos];
 
 		if (!trillionGrid.isDeletedAtLevel(partialAddress, this.levelIndex)) {
-			trillionGrid.deleteAtLevel(partialAddress, this.levelIndex);
-			console.log(`Deleted square [${row},${col}] at layer ${this.levelIndex}`);
+			const client = getMultiplayerClient();
+			const teamColor = client?.getTeamColor() ?? '#FFFFFF';
+
+			// Delete locally with team color
+			trillionGrid.deleteAtLevel(partialAddress, this.levelIndex, teamColor);
+			console.log(
+				`Deleted square [${row},${col}] at layer ${this.levelIndex} (${teamColor})`,
+			);
+
+			// Send to multiplayer server
+			if (client?.isConnected()) {
+				client.sendDelete(this.levelIndex, pos);
+			}
 
 			// Check if this layer is complete and level it up
 			if (gameState.checkLayerComplete(this.levelIndex)) {

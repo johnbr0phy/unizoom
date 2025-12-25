@@ -43,8 +43,11 @@ export function isParentOf(
 
 export class TrillionGrid {
 	// Per-level deletion sets - each level tracks its own deleted squares
-	// Key format: "row,col" for each position in the 10x10 grid
+	// Key format: position as string
 	private deletedByLevel: Map<number, Set<string>> = new Map();
+
+	// Track who deleted each square (position -> teamColor)
+	private deletedByTeam: Map<number, Map<string, string>> = new Map();
 
 	private getDeletedSet(level: number): Set<string> {
 		let set = this.deletedByLevel.get(level);
@@ -55,6 +58,15 @@ export class TrillionGrid {
 		return set;
 	}
 
+	private getTeamMap(level: number): Map<string, string> {
+		let map = this.deletedByTeam.get(level);
+		if (!map) {
+			map = new Map();
+			this.deletedByTeam.set(level, map);
+		}
+		return map;
+	}
+
 	// Check if a square is deleted at a specific level
 	isDeletedAtLevel(partialAddress: number[], level: number): boolean {
 		const pos = partialAddress[partialAddress.length - 1];
@@ -62,11 +74,23 @@ export class TrillionGrid {
 		return this.getDeletedSet(level).has(String(pos));
 	}
 
-	// Delete at a specific level
-	deleteAtLevel(partialAddress: number[], level: number): void {
+	// Get the team color that deleted a square
+	getDeletedByTeam(pos: number, level: number): string | null {
+		return this.getTeamMap(level).get(String(pos)) ?? null;
+	}
+
+	// Delete at a specific level with optional team color
+	deleteAtLevel(
+		partialAddress: number[],
+		level: number,
+		teamColor?: string,
+	): void {
 		const pos = partialAddress[partialAddress.length - 1];
 		if (pos === undefined) return;
 		this.getDeletedSet(level).add(String(pos));
+		if (teamColor) {
+			this.getTeamMap(level).set(String(pos), teamColor);
+		}
 	}
 
 	// Restore at a specific level
@@ -91,11 +115,13 @@ export class TrillionGrid {
 	// Clear all deletions
 	reset(): void {
 		this.deletedByLevel.clear();
+		this.deletedByTeam.clear();
 	}
 
 	// Clear deletions for a specific layer
 	resetLayer(level: number): void {
 		this.deletedByLevel.delete(level);
+		this.deletedByTeam.delete(level);
 	}
 
 	// Export state for persistence

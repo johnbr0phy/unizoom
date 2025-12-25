@@ -1,12 +1,13 @@
 import { createCamera, updateCamera } from '@/core';
-import { GridLayer } from '@/grid';
+import { GridLayer, gameState, trillionGrid } from '@/grid';
 import { setupTouchZoom, setupWheelZoom } from '@/input';
 import { LAYERS } from '@/layers';
 import { getVisibleLayers } from '@/layers/visibility';
+import { initMultiplayer } from '@/multiplayer';
 import { render, setupCanvas, startLoop, updateLayers } from '@/rendering';
 import { ScaleIndicator } from '@/ui';
 
-console.log('Trillion Dollar Homepage — Starting...');
+console.log('Delete the Universe — Starting...');
 
 // Initialize canvas
 const { canvas, ctx } = setupCanvas('canvas');
@@ -40,6 +41,76 @@ canvas.addEventListener('click', (e) => {
 // Setup UI
 const scaleIndicator = new ScaleIndicator('scale-indicator');
 
+// Initialize multiplayer
+const WS_URL =
+	import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:8080`;
+const multiplayer = initMultiplayer(WS_URL);
+
+// Handle multiplayer events
+multiplayer.on('connected', (player, state) => {
+	console.log(`Connected as ${player.id} with team color ${player.teamColor}`);
+
+	// Load initial state from server
+	for (let i = 0; i < state.layers.length; i++) {
+		const layerState = state.layers[i];
+		if (!layerState) continue;
+		gameState.setLayerLevel(i, layerState.level);
+		for (const pos of layerState.deleted) {
+			const deletedBy =
+				(layerState as { deletedBy?: Record<string, string> }).deletedBy?.[
+					String(pos)
+				] ?? '#888888';
+			trillionGrid.deleteAtLevel([pos], i, deletedBy);
+		}
+	}
+
+	// Update player UI
+	updatePlayerIndicator(player.teamColor, state.playerCount);
+});
+
+multiplayer.on('playerJoined', (_player, count) => {
+	updatePlayerCount(count);
+});
+
+multiplayer.on('playerLeft', (_playerId, count) => {
+	updatePlayerCount(count);
+});
+
+multiplayer.on('deleted', (action) => {
+	// Another player deleted a square - update locally
+	trillionGrid.deleteAtLevel(
+		[action.position],
+		action.layerIndex,
+		action.teamColor,
+	);
+});
+
+multiplayer.on('layerLeveled', (layerIndex, newLevel) => {
+	gameState.setLayerLevel(layerIndex, newLevel);
+	trillionGrid.resetLayer(layerIndex);
+});
+
+// Connect to multiplayer server
+multiplayer.connect();
+
+// UI helper functions
+function updatePlayerIndicator(teamColor: string, playerCount: number): void {
+	const indicator = document.getElementById('player-indicator');
+	if (indicator) {
+		indicator.innerHTML = `
+			<div class="player-color" style="background: ${teamColor}"></div>
+			<span class="player-count">${playerCount} online</span>
+		`;
+	}
+}
+
+function updatePlayerCount(count: number): void {
+	const countEl = document.querySelector('.player-count');
+	if (countEl) {
+		countEl.textContent = `${count} online`;
+	}
+}
+
 // Start the render loop
 startLoop(
 	(deltaTime) => {
@@ -58,7 +129,5 @@ startLoop(
 	},
 );
 
-console.log('Trillion Dollar Homepage — Running!');
-console.log(
-	'Click squares to delete them. Zoom to explore 1 trillion squares!',
-);
+console.log('Delete the Universe — Running!');
+console.log('Click squares to delete them. Compete with others to level up!');

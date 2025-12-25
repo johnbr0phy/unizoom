@@ -25,6 +25,14 @@ class GameStateManager {
 		return this.layerLevels[layerIndex] ?? 1;
 	}
 
+	// Set level for a specific layer (for multiplayer sync)
+	setLayerLevel(layerIndex: number, level: number): void {
+		if (layerIndex >= 0 && layerIndex < this.layerLevels.length) {
+			this.layerLevels[layerIndex] = level;
+			this.notifyListeners();
+		}
+	}
+
 	// Get squares per side for a specific layer
 	getSquaresPerSideForLayer(layerIndex: number): number {
 		return Math.min(this.getLevelForLayer(layerIndex), 10);

@@ -86,6 +86,32 @@
       #scale-indicator .layer-info {
         opacity: 0.9;
       }
+
+      #player-indicator {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      #player-indicator .player-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        border: 2px solid rgba(255, 255, 255, 0.5);
+      }
+
+      #player-indicator .player-count {
+        opacity: 0.8;
+      }
     </style>
   </head>
   <body>
@@ -96,6 +122,10 @@
         <div class="scale-value">1.0 m</div>
         <div class="layer-name">Human</div>
         <div class="layer-progress"></div>
+      </div>
+      <div id="player-indicator">
+        <div class="player-color" style="background: #888"></div>
+        <span class="player-count">Connecting...</span>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
