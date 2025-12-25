@@ -90,6 +90,11 @@ multiplayer.on('layerLeveled', (layerIndex, newLevel) => {
 	trillionGrid.resetLayer(layerIndex);
 });
 
+multiplayer.on('offline', (teamColor) => {
+	// Playing in solo mode
+	updatePlayerIndicatorOffline(teamColor);
+});
+
 // Connect to multiplayer server
 multiplayer.connect();
 
@@ -108,6 +113,16 @@ function updatePlayerCount(count: number): void {
 	const countEl = document.querySelector('.player-count');
 	if (countEl) {
 		countEl.textContent = `${count} online`;
+	}
+}
+
+function updatePlayerIndicatorOffline(teamColor: string): void {
+	const indicator = document.getElementById('player-indicator');
+	if (indicator) {
+		indicator.innerHTML = `
+			<div class="player-color" style="background: ${teamColor}"></div>
+			<span class="player-count">Solo</span>
+		`;
 	}
 }
 

@@ -5,14 +5,15 @@ import type {
 	Player,
 	ServerMessage,
 } from './types';
+import { TEAM_COLORS } from './types';
 
-type ConnectionState = 'disconnected' | 'connecting' | 'connected';
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'offline';
 
 export class MultiplayerClient {
 	private ws: WebSocket | null = null;
 	private connectionState: ConnectionState = 'disconnected';
 	private reconnectAttempts = 0;
-	private maxReconnectAttempts = 5;
+	private maxReconnectAttempts = 3;
 	private reconnectDelay = 1000;
 
 	// Player info
@@ -23,6 +24,7 @@ export class MultiplayerClient {
 	private listeners = {
 		connected: [] as Array<(player: Player, state: GameStateSnapshot) => void>,
 		disconnected: [] as Array<() => void>,
+		offline: [] as Array<(teamColor: string) => void>,
 		playerJoined: [] as Array<(player: Player, count: number) => void>,
 		playerLeft: [] as Array<(playerId: string, count: number) => void>,
 		deleted: [] as Array<(action: DeleteAction) => void>,
@@ -75,7 +77,8 @@ export class MultiplayerClient {
 
 	private attemptReconnect(): void {
 		if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-			console.log('Max reconnect attempts reached');
+			console.log('Max reconnect attempts reached, switching to offline mode');
+			this.goOffline();
 			return;
 		}
 
@@ -88,6 +91,17 @@ export class MultiplayerClient {
 		setTimeout(() => {
 			this.connect();
 		}, delay);
+	}
+
+	private goOffline(): void {
+		this.connectionState = 'offline';
+		// Assign a random team color for solo play
+		const randomIndex = Math.floor(Math.random() * TEAM_COLORS.length);
+		const randomColor = TEAM_COLORS[randomIndex] ?? '#FF6B6B';
+		this.teamColor = randomColor;
+		this.playerId = 'solo-player';
+		console.log(`Playing in solo mode with color ${randomColor}`);
+		this.emit('offline', randomColor);
 	}
 
 	private handleMessage(message: ServerMessage): void {
